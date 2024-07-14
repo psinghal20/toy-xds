@@ -1,0 +1,14 @@
+syntax = "proto3";
+package toy_xds;
+
+service StateDiscoveryService {
+    rpc DeltaXDS (DeltaXDSRequest) returns (DeltaXDSResponse);
+}
+
+message DeltaXDSRequest {
+   string name = 1;
+}
+
+message DeltaXDSResponse {
+    string message = 1;
+}
