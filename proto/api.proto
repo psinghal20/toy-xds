@@ -6,9 +6,44 @@ service StateDiscoveryService {
 }
 
 message DeltaXDSRequest {
-   string name = 1;
+    Node node = 1;
+
+    repeated string resource_names_subscribe = 2;
+
+    repeated string resource_names_unsubscribe = 3;
+
+    map<string, string> initial_resource_versions = 4;
+
+    string response_nonce = 5;
+
+    Status error_details = 6;
+}
+
+message Status {
+    uint32 code = 1;
+
+    string message = 2;
+}
+
+message Node {
+    string name = 1;
 }
 
 message DeltaXDSResponse {
-    string message = 1;
+    // List of resources sent from server to client
+    repeated Resource resources = 1;
+
+    // List of resources to be removed by client from server
+    repeated Resource removed_resources = 2;
+
+    // Nonce required for mapping ACK/NACK
+    string nonce = 3;
+}
+
+message Resource {
+    // Resource name
+    string name = 1;
+
+    // Resource version
+    string version = 2;
 }

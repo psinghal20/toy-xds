@@ -1,7 +1,7 @@
 use tonic::{transport::Server, Request, Response, Status};
 
 use xds_api::state_discovery_service_server::{StateDiscoveryService, StateDiscoveryServiceServer};
-use xds_api::{DeltaXdsRequest, DeltaXdsResponse};
+use xds_api::{DeltaXdsRequest, DeltaXdsResponse, Node, Resource};
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
@@ -18,11 +18,15 @@ impl StateDiscoveryService for StateDiscoveryServer {
         request: Request<DeltaXdsRequest>,
     ) -> Result<Response<DeltaXdsResponse>, Status> {
         println!("Got a request: {:?}", request);
-
+        let xds_request = request.into_inner();
+        if let Some(node) = xds_request.node {
+            println!("Connected node: {}", node.name);
+        }
         let reply = DeltaXdsResponse {
-            message: format!("Hello {}!", request.into_inner().name),
+            resources: vec![Resource{name: "A".into(), version:"v1".into()}],
+            removed_resources: Vec::new(),
+            nonce: "testing-nonce".into(),
         };
-
         Ok(Response::new(reply))
     }
 }
