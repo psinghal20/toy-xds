@@ -1,7 +1,9 @@
+use std::pin::Pin;
+use tokio_stream::{Stream, StreamExt};
 use tonic::{transport::Server, Request, Response, Status};
 
 use xds_api::state_discovery_service_server::{StateDiscoveryService, StateDiscoveryServiceServer};
-use xds_api::{DeltaXdsRequest, DeltaXdsResponse, Node, Resource};
+use xds_api::{DeltaXdsRequest, DeltaXdsResponse};
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
@@ -10,24 +12,29 @@ pub mod xds_api {
 #[derive(Debug, Default)]
 pub struct StateDiscoveryServer {}
 
+
 // TODO: What is this async_trait macro magic?
 #[tonic::async_trait]
 impl StateDiscoveryService for StateDiscoveryServer {
+    type DeltaXDSStream = Pin<Box<dyn Stream<Item = Result<DeltaXdsResponse, Status>> + Send + 'static>>;
+
     async fn delta_xds(
         &self,
-        request: Request<DeltaXdsRequest>,
-    ) -> Result<Response<DeltaXdsResponse>, Status> {
-        println!("Got a request: {:?}", request);
-        let xds_request = request.into_inner();
-        if let Some(node) = xds_request.node {
-            println!("Connected node: {}", node.name);
-        }
-        let reply = DeltaXdsResponse {
-            resources: vec![Resource{name: "A".into(), version:"v1".into()}],
-            removed_resources: Vec::new(),
-            nonce: "testing-nonce".into(),
-        };
-        Ok(Response::new(reply))
+        request: Request<tonic::Streaming<DeltaXdsRequest>>,
+    ) -> Result<Response<Self::DeltaXDSStream>, Status> {
+       let mut stream = request.into_inner();
+       let response_stream = async_stream::try_stream! {
+            while let Some(xds_request) = stream.next().await {
+                let xds_request = xds_request?;
+                println!("Request = {:?}", xds_request);
+                yield DeltaXdsResponse {
+                    resources: Vec::new(),
+                    removed_resources: Vec::new(),
+                    nonce: "test".into(),
+                }
+            }
+       };
+       Ok(Response::new(Box::pin(response_stream) as Self::DeltaXDSStream))
     }
 }
 

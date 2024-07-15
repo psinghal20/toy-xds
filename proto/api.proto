@@ -2,7 +2,7 @@ syntax = "proto3";
 package toy_xds;
 
 service StateDiscoveryService {
-    rpc DeltaXDS (DeltaXDSRequest) returns (DeltaXDSResponse);
+    rpc DeltaXDS (stream DeltaXDSRequest) returns (stream DeltaXDSResponse);
 }
 
 message DeltaXDSRequest {
