@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::error::Error;
 
 use tonic::transport::Channel;
-use tonic::{Request, Status};
+use tonic::{Request};
 use xds_api::state_discovery_service_client::StateDiscoveryServiceClient;
-use xds_api::{DeltaXdsRequest, DeltaXdsResponse, Node};
+use xds_api::{DeltaXdsRequest, Node};
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
