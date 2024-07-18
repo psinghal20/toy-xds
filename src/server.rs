@@ -1,12 +1,18 @@
+mod args;
+
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use clap::Parser;
 use tokio::sync::Mutex;
 use tokio_stream::{Stream, StreamExt};
 use tonic::{transport::Server, Request, Response, Status, Code};
 
 use xds_api::state_discovery_service_server::{StateDiscoveryService, StateDiscoveryServiceServer};
 use xds_api::{DeltaXdsRequest, DeltaXdsResponse};
+use args::ServerArgs;
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
@@ -28,7 +34,7 @@ pub struct StateDiscoveryServer {
 }
 
 impl ServerState {
-    fn GetOrCreateClient(&mut self, client_name: String) -> &'_ ConnectedClient {
+    fn get_or_create_client(&mut self, client_name: String) -> &'_ ConnectedClient {
         let client = ConnectedClient{
             name: client_name.clone(),
         };
@@ -55,7 +61,7 @@ impl StateDiscoveryService for StateDiscoveryServer {
                     Err(Status::new(Code::InvalidArgument, "node.name is invalid"))?;
                 }
                 let mut state = state_clone.lock().await;
-                let client = state.GetOrCreateClient(xds_request.node.unwrap().name);
+                let client = state.get_or_create_client(xds_request.node.unwrap().name);
                 println!("Client Name = {:?}", client.name);
                 yield DeltaXdsResponse {
                     resources: Vec::new(),
@@ -71,7 +77,8 @@ impl StateDiscoveryService for StateDiscoveryServer {
 // TODO: What is this error type?
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
+    let args = ServerArgs::parse();
+    let addr = args.addr.parse::<SocketAddr>()?;
     let server = StateDiscoveryServer::default();
 
     Server::builder()
