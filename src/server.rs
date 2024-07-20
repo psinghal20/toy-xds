@@ -1,90 +1,114 @@
 mod args;
 
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::error::Error;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use clap::Parser;
+use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Mutex;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{Stream, StreamExt};
-use tonic::{transport::Server, Request, Response, Status, Code};
+use tonic::{transport::Server, Request, Response, Status};
 
+use args::ServerArgs;
 use xds_api::state_discovery_service_server::{StateDiscoveryService, StateDiscoveryServiceServer};
 use xds_api::{DeltaXdsRequest, DeltaXdsResponse};
-use args::ServerArgs;
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
 }
 
-#[derive(Debug, Default)]
-struct ConnectedClient {
-    name: String
-}
-
-#[derive(Debug, Default)]
-struct ServerState {
-    connected_clients: HashMap<String, ConnectedClient>
-}
-
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StateDiscoveryServer {
-    state: Arc<Mutex<ServerState>>
+    cache: Arc<Mutex<ClientXdsCache>>,
 }
 
-impl ServerState {
-    fn get_or_create_client(&mut self, client_name: String) -> &'_ ConnectedClient {
-        let client = ConnectedClient{
-            name: client_name.clone(),
-        };
-        self.connected_clients.entry(client_name).or_insert(client)
-    }
+fn handle_incoming_request(req: DeltaXdsRequest) -> Result<(), Box<dyn Error>> {
+    // TODO: Add handler for taking incoming request and store the client details
+    // and requested resources.
+    return Ok(());
 }
-
 
 // TODO: What is this async_trait macro magic?
 #[tonic::async_trait]
 impl StateDiscoveryService for StateDiscoveryServer {
-    type DeltaXDSStream = Pin<Box<dyn Stream<Item = Result<DeltaXdsResponse, Status>> + Send + 'static>>;
+    type DeltaXDSStream =
+        Pin<Box<dyn Stream<Item = Result<DeltaXdsResponse, Status>> + Send + 'static>>;
 
     async fn delta_xds(
         &self,
         request: Request<tonic::Streaming<DeltaXdsRequest>>,
     ) -> Result<Response<Self::DeltaXDSStream>, Status> {
-       let mut stream = request.into_inner();
-       let state_clone = self.state.clone();
-       let response_stream = async_stream::try_stream! {
+        let cache = self.cache.clone();
+        // TODO: Get the client name from the metadata header
+        let mut stream = request.into_inner();
+        let (tx, rx) = mpsc::channel(128);
+        {
+            let mut cache_guard = cache.lock().await;
+            cache_guard.add_new_client("test-client".into(), tx);
+            println!("Cache: {:?}", cache_guard);
+        }
+
+        // TODO: Setup the client, tx and resource list cache
+        tokio::spawn(async move {
             while let Some(xds_request) = stream.next().await {
-                let xds_request = xds_request?;
-                if let None = xds_request.node {
-                    Err(Status::new(Code::InvalidArgument, "node.name is invalid"))?;
+                if let Ok(xds_request) = xds_request {
+                    if let Err(err) = handle_incoming_request(xds_request) {
+                        eprintln!("failed handling incoming xds request {}", err);
+                    }
                 }
-                let mut state = state_clone.lock().await;
-                let client = state.get_or_create_client(xds_request.node.unwrap().name);
-                println!("Client Name = {:?}", client.name);
-                yield DeltaXdsResponse {
-                    resources: Vec::new(),
-                    removed_resources: Vec::new(),
-                    nonce: "test".into(),
-                };
             }
-       };
-       Ok(Response::new(Box::pin(response_stream) as Self::DeltaXDSStream))
+        });
+
+        let response_stream = ReceiverStream::new(rx);
+        Ok(Response::new(
+            Box::pin(response_stream) as Self::DeltaXDSStream
+        ))
     }
 }
 
-// TODO: What is this error type?
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = ServerArgs::parse();
     let addr = args.addr.parse::<SocketAddr>()?;
-    let server = StateDiscoveryServer::default();
-
+    let client_cache = Arc::new(Mutex::new(ClientXdsCache::new()));
+    let server = StateDiscoveryServer{
+        cache: client_cache.clone(),
+    };
     Server::builder()
         .add_service(StateDiscoveryServiceServer::new(server))
         .serve(addr)
         .await?;
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct ClientCacheEntry {
+    tx: Sender<Result<DeltaXdsResponse, Status>>,
+    resources_subscribed: Option<Vec<String>>
+}
+
+#[derive(Debug)]
+struct ClientXdsCache {
+    clients: HashMap<String, ClientCacheEntry>
+}
+
+impl ClientXdsCache {
+    fn new() -> Self {
+        ClientXdsCache{
+            clients: HashMap::new()
+        }
+    }
+
+    fn add_new_client(&mut self, client_name: String, tx: Sender<Result<DeltaXdsResponse, Status>>) {
+        self.clients.insert(client_name, ClientCacheEntry{
+            tx: tx,
+            resources_subscribed: None
+        });
+    }
 }

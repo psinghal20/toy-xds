@@ -1,21 +1,24 @@
 mod args;
 
+use clap::Parser;
 use std::collections::HashMap;
 use std::error::Error;
-use clap::Parser;
 use tokio::time::{sleep, Duration};
 
+use args::ClientArgs;
 use tonic::transport::Channel;
 use tonic::Request;
 use xds_api::state_discovery_service_client::StateDiscoveryServiceClient;
 use xds_api::{DeltaXdsRequest, Node};
-use args::ClientArgs;
 
 pub mod xds_api {
     tonic::include_proto!("toy_xds");
 }
 
-async fn run_delta_xds(client: &mut StateDiscoveryServiceClient<Channel>, client_name: String) -> Result<(), Box<dyn Error>> {
+async fn run_delta_xds(
+    client: &mut StateDiscoveryServiceClient<Channel>,
+    client_name: String,
+) -> Result<(), Box<dyn Error>> {
     let outbound = async_stream::stream! {
         loop {
             let xds_request = DeltaXdsRequest {
